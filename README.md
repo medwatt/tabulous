@@ -1,4 +1,4 @@
-# tabby.nvim
+# tabulous
 
 A simple plugin for managing tabs in neovim (see video)
 
@@ -11,7 +11,7 @@ To install with `Lazy`:
 ```
 {
     "medwatt/tabby.nvim",
-    config = function() require("tabby").setup({sessions_path = "/path/where/sessions/will/be/stored"}) end,
+    config = function() require("tabulous").setup({sessions_path = "/path/where/sessions/will/be/stored"}) end,
 },
 
 ```
