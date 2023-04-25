@@ -6,7 +6,9 @@ local M = {}
 M.tab_num_dict = {}   -- key is the tab number, and value is a list of buffer numbers
 M.tab_names_dict = {} -- key is the tab number, and value is a list of buffer paths (used for saving a session)
 
-M.last_active_tab_num = 1
+M.active_tab = 1
+M.last_active_tab = 1
+
 M.initialized = false -- spcifies whether a second tab was created
 
 ------------------------------------------------------------------------
@@ -28,32 +30,18 @@ function M.create_new_tab()
 
     -- Create a new tab and initialize it
     vim.cmd('tabnew')
-    table.insert(M.tab_num_dict, {})
+    table.insert(M.tab_num_dict, { vim.api.nvim_get_current_buf() })
 end
 
--- Deleting a tab also deletes the buffers it contains
-function M.delete_tab()
-    if #M.tab_num_dict > 1 then
-        local current_tab = vim.fn.tabpagenr()
-        local buffers = M.tab_num_dict[current_tab]
-
-        table.remove(M.tab_num_dict, current_tab)
-        vim.cmd("tabclose " .. current_tab)
-
-        for _, buffer in ipairs(buffers) do
-            vim.cmd("bdelete! " .. buffer)
-        end
-
-        M.last_active_tab_num = current_tab - 1
-        M.hide_other_buffers()
-    end
-end
+------------------------------------------------------------------------
+--                         hide other buffers                         --
+------------------------------------------------------------------------
 
 -- Hide the buffers of the last active tab and unhide those of the current active tab
 function M.hide_other_buffers()
     local current_tab = vim.fn.tabpagenr()
     for tab, buffers in pairs(M.tab_num_dict) do
-        if tab == M.last_active_tab_num then
+        if tab == M.last_active_tab then
             for _, buffer in ipairs(buffers) do
                 vim.api.nvim_buf_set_option(buffer, 'buflisted', false)
             end
@@ -65,7 +53,33 @@ function M.hide_other_buffers()
     end
 end
 
--- Deletes a buffer in a tab: this requires special handling since
+------------------------------------------------------------------------
+--                             delete tab                             --
+------------------------------------------------------------------------
+
+-- Deleting a tab also deletes the buffers it contains
+function M.delete_tab()
+    if #M.tab_num_dict > 1 then
+        local buffers = M.tab_num_dict[M.active_tab]
+
+        table.remove(M.tab_num_dict, M.active_tab)
+        vim.cmd("tabclose " .. M.active_tab)
+
+        for _, buffer in ipairs(buffers) do
+            vim.cmd("bdelete! " .. buffer)
+        end
+
+        M.last_active_tab = M.active_tab - 1
+        -- removed for now since it results in tab enter event which has this function
+        M.hide_other_buffers()
+    end
+end
+
+------------------------------------------------------------------------
+--                           delete buffer                            --
+------------------------------------------------------------------------
+
+-- Delete a buffer in a tab: this requires special handling since
 -- the default behavior is to delete a tab when it has no windows.
 -- We want to overide this behavior such that a tab is only deleted
 -- when it contains no buffers (not windows)
@@ -76,8 +90,7 @@ function M.buffer_delete()
 
         -- There's more than one tab
     else
-        local current_tab = vim.fn.tabpagenr()
-        local buffers = M.tab_num_dict[current_tab]
+        local buffers = M.tab_num_dict[M.active_tab]
 
         if buffers then
             local active_buffer = vim.api.nvim_get_current_buf()
@@ -86,10 +99,7 @@ function M.buffer_delete()
             -- Doing this automatically brings the tab before this one into focus
             -- Therefore, we need to call `hide_other_buffers` to unhide its buffers
             if #buffers == 1 then
-                vim.cmd("tabclose " .. current_tab)
-                vim.cmd("bdelete " .. active_buffer)
-                table.remove(M.tab_num_dict, current_tab)
-                M.hide_other_buffers()
+                M.delete_tab()
 
                 -- When there are more than one tabs, we need to switch to a tab
                 -- other than the active one before deleting, otherwise vim will
@@ -107,11 +117,15 @@ function M.buffer_delete()
                     end
                 end
                 vim.cmd('bdelete ' .. active_buffer)
-                M.tab_num_dict[current_tab] = utils.get_active_buffer_list()
+                M.tab_num_dict[M.active_tab] = utils.get_active_buffer_list()
             end
         end
     end
 end
+
+------------------------------------------------------------------------
+--                            load session                            --
+------------------------------------------------------------------------
 
 -- Load session from file
 function M.load_session()
@@ -127,6 +141,93 @@ function M.load_session()
                 vim.cmd("e " .. buffer)
             end
         end
+    end
+    -- do a final refresh for the last tab that didn't call `M.hide_other_buffers`
+    M.hide_other_buffers()
+end
+
+------------------------------------------------------------------------
+--                         move buffer to tab                         --
+------------------------------------------------------------------------
+
+function M.move_buffer_to_tab(t_orig, t_dest, buf_num)
+    -- remove tab from the entry of the current tab
+    utils.remove_item_from_list(M.tab_num_dict[t_orig], buf_num)
+
+    -- add entry for item in destination tab
+    if not M.tab_num_dict[t_dest] then
+        table.insert(M.tab_num_dict, { buf_num })
+    else
+        table.insert(M.tab_num_dict[t_dest], #M.tab_num_dict[t_dest] + 1, buf_num)
+    end
+end
+
+------------------------------------------------------------------------
+--                          maximize toggle                           --
+------------------------------------------------------------------------
+
+local maximized_window_id = nil
+local origin_window_id = nil
+local origin_tab = nil
+local destination_tab = nil
+local moved_buffer = nil
+
+function M.MaximizeWindowToggle()
+    -- Only allow one window to be maximized at a time,
+    -- otherwise we might start leaving them all over the place
+    if not moved_buffer or M.active_tab == destination_tab then
+        if vim.fn.winnr('$') > 1 then
+            -- There are more than one window in this tab
+            if maximized_window_id then
+                vim.cmd('wincmd w')
+                vim.fn.win_gotoid(maximized_window_id)
+            else
+                -- Get active tab and active buffer
+                local current_tab = vim.fn.tabpagenr()
+                local active_buffer = vim.api.nvim_get_current_buf()
+
+                -- Save them so that the tab list can be returned to its
+                -- original state after the tab is closed
+                origin_window_id = vim.fn.win_getid()
+                origin_tab = current_tab
+                destination_tab = #M.tab_num_dict + 1
+                moved_buffer = active_buffer
+
+                -- Move the buffer from its parent tab to a new tab
+                M.move_buffer_to_tab(origin_tab, destination_tab, active_buffer)
+
+                vim.cmd('wincmd w')
+
+                -- Create a new tab and hide/unhide the buffers
+                vim.cmd("tab sp")
+                M.hide_other_buffers()
+
+                -- Go to the tab and make the recently moved buffer active
+                vim.cmd("normal! " .. #M.tab_num_dict .. "gt")
+                vim.cmd("buffer " .. active_buffer)
+
+                -- Get the id of the window of the buffer
+                maximized_window_id = vim.fn.win_getid()
+            end
+        else
+            -- This is the only window in this tab
+            if origin_window_id then
+                M.move_buffer_to_tab(destination_tab, origin_tab, moved_buffer)
+
+                -- Delete the tab and go back to the window
+                M.delete_tab()
+                vim.fn.win_gotoid(origin_window_id)
+
+                -- Unset the variables
+                maximized_window_id = nil
+                origin_window_id = nil
+                origin_tab = nil
+                destination_tab = nil
+                moved_buffer = nil
+            end
+        end
+    else
+        print(string.format("There's already a maximized tab (%d). Unmaximize that first!", destination_tab))
     end
 end
 

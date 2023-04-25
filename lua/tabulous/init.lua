@@ -24,6 +24,10 @@ function M.delete_tab()
     manager.delete_tab()
 end
 
+function M.MaximizeWindowToggle()
+    manager.MaximizeWindowToggle()
+end
+
 function M.load_session_from_file()
     if M.options.sessions_path then
         manager.tab_names_dict = session.load_session_from_file(M.options.sessions_path)
@@ -33,7 +37,7 @@ function M.load_session_from_file()
     end
 end
 
-function M.save_session_from_file()
+function M.save_session_to_file()
     if M.options.sessions_path then
         session.save_session_to_file(M.options.sessions_path, manager.tab_num_dict)
     else
@@ -50,28 +54,31 @@ function M._auto_commands()
 
     vim.api.nvim_create_autocmd({ "TabEnter" }, {
         group = group,
-        callback = function() manager.hide_other_buffers() end,
+        callback = function()
+            manager.active_tab = vim.fn.tabpagenr()
+            manager.hide_other_buffers()
+        end,
     })
 
     vim.api.nvim_create_autocmd({ "TabLeave" }, {
         group = group,
-        callback = function() manager.last_active_tab_num = vim.fn.tabpagenr() end,
+        callback = function() manager.last_active_tab = vim.fn.tabpagenr() end,
     })
 
-    vim.api.nvim_create_autocmd({ "BufRead" }, {
+    vim.api.nvim_create_autocmd({ "BufRead", "TermOpen" }, {
         group = group,
         callback = function()
-            local current_tab = vim.fn.tabpagenr()
-            manager.tab_num_dict[current_tab] = utils.get_active_buffer_list()
+            M.active_tab = vim.fn.tabpagenr()
+            manager.tab_num_dict[M.active_tab] = utils.get_active_buffer_list()
             manager.initialized = true
 
             -- remove no name tab when a tab is loaded
-            if #manager.tab_num_dict[current_tab] == 2 then
-                local buf_num = manager.tab_num_dict[current_tab][1]
+            if #manager.tab_num_dict[M.active_tab] == 2 then
+                local buf_num = manager.tab_num_dict[M.active_tab][1]
                 local buf_name = vim.fn.bufname(buf_num)
                 if #buf_name == 0 then
                     vim.cmd("bd " .. buf_num)
-                    manager.tab_num_dict[current_tab] = utils.get_active_buffer_list()
+                    manager.tab_num_dict[M.active_tab] = utils.get_active_buffer_list()
                 end
             end
         end,
@@ -124,6 +131,5 @@ function M.setup(options)
     M._auto_commands()
     M._user_commands()
 end
-
 
 return M

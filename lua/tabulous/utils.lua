@@ -1,6 +1,6 @@
 local M = {}
 
--- Checks if a buffer is active (visible and listed)
+-- Check if a buffer is active (visible and listed)
 function M.is_active(buf_num)
     if not buf_num or buf_num < 1 then
         return false
@@ -19,7 +19,7 @@ function M.is_present(value, tbl)
     return false
 end
 
--- Removes nil values
+-- Remove nil values
 function M.remove_nil_values(tabs)
     local new_list = {}
     for _, item in ipairs(tabs) do
@@ -30,7 +30,17 @@ function M.remove_nil_values(tabs)
     return new_list
 end
 
--- Gets a list of all active buffers
+-- Remove an item from a list
+function M.remove_item_from_list(list, item)
+    for i = 1, #list do
+        if list[i] == item then
+            table.remove(list, i)
+            break
+        end
+    end
+end
+
+-- Get a list of all active buffers
 function M.get_active_buffer_list()
     local buf_list = vim.api.nvim_list_bufs()
     local active_buffers = {}
@@ -41,6 +51,5 @@ function M.get_active_buffer_list()
     end
     return active_buffers
 end
-
 
 return M
