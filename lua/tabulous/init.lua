@@ -7,7 +7,6 @@ local session = require "tabulous.sessions"
 ------------------------------------------------------------------------
 --                             functions                              --
 ------------------------------------------------------------------------
-
 function M.create_new_tab()
     if manager.initialized then
         manager.create_new_tab()
@@ -48,7 +47,6 @@ end
 ------------------------------------------------------------------------
 --                          auto commands                             --
 ------------------------------------------------------------------------
-
 function M._auto_commands()
     local group = vim.api.nvim_create_augroup("tabulous", {})
 
@@ -71,16 +69,6 @@ function M._auto_commands()
             M.active_tab = vim.fn.tabpagenr()
             manager.tab_num_dict[M.active_tab] = utils.get_active_buffer_list()
             manager.initialized = true
-
-            -- remove no name tab when a tab is loaded
-            if #manager.tab_num_dict[M.active_tab] == 2 then
-                local buf_num = manager.tab_num_dict[M.active_tab][1]
-                local buf_name = vim.fn.bufname(buf_num)
-                if #buf_name == 0 then
-                    vim.cmd("bd " .. buf_num)
-                    manager.tab_num_dict[M.active_tab] = utils.get_active_buffer_list()
-                end
-            end
         end,
     })
 end
@@ -88,7 +76,6 @@ end
 ------------------------------------------------------------------------
 --                           user commands                            --
 ------------------------------------------------------------------------
-
 function M._user_commands()
     vim.api.nvim_create_user_command(
         "TabulousCreateNewTab",
